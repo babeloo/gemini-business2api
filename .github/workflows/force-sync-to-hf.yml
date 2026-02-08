@@ -1,0 +1,65 @@
+name: Sync to Hugging Face hub
+on:
+  # 移除 push 事件，只保留 workflow_dispatch
+  workflow_dispatch:
+    # 您可以在这里定义输入参数，以便在手动触发时提供
+    # 例如：
+    # inputs:
+    #   logLevel:
+    #     description: 'Log level'
+    #     required: true
+    #     default: 'warning'
+    #     type: choice
+    #     options:
+    #       - info
+    #       - warning
+    #       - debug
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # 获取所有历史，包括LFS文件
+          lfs: true
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - name: Clone Hugging Face Space and Sync
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 确保您已经在GitHub仓库中设置了HF_TOKEN Secret
+          HF_USERNAME: vakyi # 替换为您的Hugging Face用户名或组织名
+          HF_SPACE_NAME: gemini-business2api # 替换为您的Hugging Face Space名称
+        run: |
+          # 克隆Hugging Face Space到本地的一个临时目录
+          git clone https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf_space_repo
+
+          # 进入Hugging Face Space的克隆目录
+          cd hf_space_repo
+
+          # 清空当前Hugging Face Space目录中的所有文件 (除了.git目录)
+          # 这样可以确保Hugging Face Space完全与GitHub仓库同步，删除GitHub仓库中不存在的文件
+          find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
+
+          # 将GitHub仓库的所有内容复制到Hugging Face Space的克隆目录
+          # 使用rsync可以更高效地处理文件，并排除.git和.github目录
+          rsync -av --exclude '.git' --exclude '.github' --exclude '.gitattributes' ../ ./
+
+          # 添加所有更改到Git暂存区
+          git add .
+
+          # 检查是否有实际的更改需要提交
+          if git diff-index --quiet HEAD; then
+              echo "No changes detected in Hugging Face Space. Skipping commit and push."
+          else
+              # 提交更改
+              git commit -m "Sync from GitHub Actions"
+
+              # 推送更改到Hugging Face Space
+              git push
+          fi
