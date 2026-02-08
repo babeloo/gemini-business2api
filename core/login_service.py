@@ -12,7 +12,6 @@ from core.base_task_service import BaseTask, BaseTaskService, TaskCancelledError
 from core.config import config
 from core.mail_providers import create_temp_mail_client
 from core.gemini_automation import GeminiAutomation
-from core.gemini_automation_uc import GeminiAutomationUC
 from core.microsoft_mail_client import MicrosoftMailClient
 from core.proxy_utils import parse_proxy_setting
 
@@ -247,31 +246,16 @@ class LoginService(BaseTaskService[LoginTask]):
         else:
             return {"success": False, "email": account_id, "error": f"不支持的邮件提供商: {mail_provider}"}
 
-        # 根据配置选择浏览器引擎
-        browser_engine = (config.basic.browser_engine or "dp").lower()
         headless = config.basic.browser_headless
 
-        log_cb("info", f"🌐 启动浏览器 (引擎={browser_engine}, 无头模式={headless})...")
+        log_cb("info", f"🌐 启动浏览器 (无头模式={headless})...")
 
-        if browser_engine == "dp":
-            # DrissionPage 引擎：支持有头和无头模式
-            automation = GeminiAutomation(
-                user_agent=self.user_agent,
-                proxy=proxy_for_auth,
-                headless=headless,
-                log_callback=log_cb,
-            )
-        else:
-            # undetected-chromedriver 引擎：无头模式反检测能力弱，强制使用有头模式
-            if headless:
-                log_cb("warning", "⚠️ UC 引擎无头模式反检测能力弱，强制使用有头模式")
-                headless = False
-            automation = GeminiAutomationUC(
-                user_agent=self.user_agent,
-                proxy=proxy_for_auth,
-                headless=headless,
-                log_callback=log_cb,
-            )
+        automation = GeminiAutomation(
+            user_agent=self.user_agent,
+            proxy=proxy_for_auth,
+            headless=headless,
+            log_callback=log_cb,
+        )
         # 允许外部取消时立刻关闭浏览器
         self._add_cancel_hook(task.id, lambda: getattr(automation, "stop", lambda: None)())
         try:
