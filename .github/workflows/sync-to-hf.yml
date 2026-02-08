@@ -1,8 +1,5 @@
 name: Sync to Hugging Face hub
 on:
-  push:
-    branches: [main] # 当main分支有push操作时触发
-
   # 允许手动从 Actions 选项卡运行此工作流
   workflow_dispatch:
 
@@ -10,13 +7,63 @@ jobs:
   sync-to-hub:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout GitHub Repository
+        uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # 获取所有历史，包括LFS文件
           lfs: true
-      - name: Push to hub
+
+      - name: Configure Git
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+      - name: Clone Hugging Face Space and Sync
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 使用之前设置的GitHub Secret
-        run: git push https://vakyi:$HF_TOKEN@huggingface.co/spaces/vakyi/gemini-business2api main
-        # 替换 HF_USERNAME 为您的Hugging Face用户名或组织名
-        # 替换 SPACE_NAME 为您的Hugging Face Space名称
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 确保您已经在GitHub仓库中设置了HF_TOKEN Secret
+          HF_USERNAME: ${{ secrets.HF_USERNAME }} # 替换为您的Hugging Face用户名或组织名
+          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }} # 替换为您的Hugging Face Space名称
+        run: |
+          # 克隆Hugging Face Space到本地的一个临时目录
+          git clone https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf_space_repo
+
+          # 进入Hugging Face Space的克隆目录
+          cd hf_space_repo
+
+          # 清空当前Hugging Face Space目录中的所有文件 (除了.git目录)
+          find . -maxdepth 1 ! -name '.git' ! -name '.' -exec rm -rf {} +
+
+          # 将GitHub仓库的所有内容复制到Hugging Face Space的克隆目录
+          rsync -av --exclude '.git' --exclude '.github' --exclude '.gitattributes' ../ ./
+
+          # --- 新增步骤：在 README.md 最前面添加指定的 YAML front matter ---
+          # 定义要添加的 front matter
+          README_FRONT_MATTER="---\ntitle: Gemini Business2API\nemoji: 💎\ncolorFrom: pink\ncolorTo: blue\nsdk: docker\npinned: false\nlicense: mit\n---\n"
+
+          # 检查 README.md 是否存在
+          if [ -f "README.md" ]; then
+            # 将 front matter 插入到 README.md 的开头
+            # 使用 echo -e 处理换行符，并使用 cat 读取现有内容，然后重定向到临时文件，最后替换原文件
+            echo -e "$README_FRONT_MATTER$(cat README.md)" > README.md.tmp
+            mv README.md.tmp README.md
+            echo "Successfully added front matter to README.md."
+          else
+            echo "WARNING: README.md not found in the repository. Skipping front matter addition."
+            # 如果 README.md 不存在，您可以选择在此处创建一个新的 README.md 并添加 front matter
+            # echo -e "$README_FRONT_MATTER" > README.md
+          fi
+          # --- 结束新增步骤 ---
+
+          # 添加所有更改到Git暂存区
+          git add .
+
+          # 检查是否有实际的更改需要提交
+          if git diff-index --quiet HEAD; then
+              echo "No changes detected in Hugging Face Space. Skipping commit and push."
+          else
+              # 提交更改
+              git commit -m "Sync from GitHub Actions and added Hugging Face Space metadata"
+
+              # 推送更改到Hugging Face Space
+              git push
+          fi
