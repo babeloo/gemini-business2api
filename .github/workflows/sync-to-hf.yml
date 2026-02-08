@@ -1,0 +1,22 @@
+name: Sync to Hugging Face hub
+on:
+  push:
+    branches: [main] # 当main分支有push操作时触发
+
+  # 允许手动从 Actions 选项卡运行此工作流
+  workflow_dispatch:
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          lfs: true
+      - name: Push to hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 使用之前设置的GitHub Secret
+        run: git push https://vakyi:$HF_TOKEN@huggingface.co/spaces/vakyi/gemini-business2api main
+        # 替换 HF_USERNAME 为您的Hugging Face用户名或组织名
+        # 替换 SPACE_NAME 为您的Hugging Face Space名称
