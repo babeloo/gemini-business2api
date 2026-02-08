@@ -1,4 +1,4 @@
-name: Sync to Hugging Face hub
+name: FORCE Sync to Hugging Face hub Manually
 on:
   # 移除 push 事件，只保留 workflow_dispatch
   workflow_dispatch:
