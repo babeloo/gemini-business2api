@@ -33,8 +33,8 @@ jobs:
       - name: Clone Hugging Face Space and Sync
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # 确保您已经在GitHub仓库中设置了HF_TOKEN Secret
-          HF_USERNAME: vakyi # 替换为您的Hugging Face用户名或组织名
-          HF_SPACE_NAME: gemini-business2api # 替换为您的Hugging Face Space名称
+          HF_USERNAME: ${{ secrets.HF_USERNAME }} # 替换为您的Hugging Face用户名或组织名
+          HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }} # 替换为您的Hugging Face Space名称
         run: |
           # 克隆Hugging Face Space到本地的一个临时目录
           git clone https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf_space_repo
