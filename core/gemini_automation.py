@@ -61,12 +61,14 @@ class GeminiAutomation:
         headless: bool = True,
         timeout: int = 60,
         log_callback=None,
+        profile_dir: Optional[str] = None,
     ) -> None:
         self.user_agent = user_agent or self._get_ua()
         self.proxy = proxy
         self.headless = headless
         self.timeout = timeout
         self.log_callback = log_callback
+        self.profile_dir = profile_dir  # 持久化浏览器配置目录（不为空时保留数据）
         self._page = None
         self._user_data_dir = None
         self._last_send_error = ""
@@ -102,7 +104,9 @@ class GeminiAutomation:
                 except Exception:
                     pass
             self._page = None
-            self._cleanup_user_data(user_data_dir)
+            # 只有非持久化模式才清理用户数据
+            if not self.profile_dir:
+                self._cleanup_user_data(user_data_dir)
             self._user_data_dir = None
 
     def _create_page(self) -> ChromiumPage:
@@ -148,6 +152,12 @@ class GeminiAutomation:
             # 反检测参数
             options.set_argument("--disable-infobars")
             options.set_argument("--enable-features=NetworkService,NetworkServiceInProcess")
+
+        # 持久化浏览器配置：使用固定的 user-data-dir 保留 cookie/历史记录
+        if self.profile_dir:
+            os.makedirs(self.profile_dir, exist_ok=True)
+            options.set_user_data_path(self.profile_dir)
+            self._log("info", f"📁 使用持久化浏览器配置: {self.profile_dir}")
 
         options.auto_port()
         page = ChromiumPage(options)
