@@ -128,7 +128,22 @@ class GeminiAutomation:
             options.set_argument("--disable-infobars")
             options.set_argument("--enable-features=NetworkService,NetworkServiceInProcess")
 
+        # 自动分配调试端口（必须在创建页面前调用）
         options.auto_port()
+
+        # 显式设置远程调试端口（Linux 无头环境必需）
+        # auto_port() 会自动选择可用端口，但需要确保参数被正确传递
+        import socket
+        def get_free_port():
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', 0))
+                s.listen(1)
+                port = s.getsockname()[1]
+            return port
+
+        debug_port = get_free_port()
+        options.set_argument(f"--remote-debugging-port={debug_port}")
+
         page = ChromiumPage(options)
         page.set.timeouts(self.timeout)
 
