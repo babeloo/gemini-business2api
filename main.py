@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 import httpx
 import aiofiles
-from fastapi import FastAPI, HTTPException, Header, Request, Body, Form
+from fastapi import FastAPI, HTTPException, Header, Request, Body, Form, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -85,8 +85,8 @@ MODEL_TO_QUOTA_TYPE = {
 
 # ---------- 日志配置 ----------
 
-# 内存日志缓冲区 (保留最近 1000 条日志，重启后清空)
-log_buffer = deque(maxlen=1000)
+# 内存日志缓冲区 (保留最近 3000 条日志，重启后清空)
+log_buffer = deque(maxlen=3000)
 log_lock = Lock()
 
 # 统计数据持久化
@@ -1487,7 +1487,11 @@ async def admin_get_settings(request: Request):
             "session_cache_ttl_seconds": config.retry.session_cache_ttl_seconds,
             "auto_refresh_accounts_seconds": config.retry.auto_refresh_accounts_seconds,
             "scheduled_refresh_enabled": config.retry.scheduled_refresh_enabled,
-            "scheduled_refresh_interval_minutes": config.retry.scheduled_refresh_interval_minutes
+            "scheduled_refresh_interval_minutes": config.retry.scheduled_refresh_interval_minutes,
+            "scheduled_refresh_cron": config.retry.scheduled_refresh_cron,
+            "refresh_batch_size": config.retry.refresh_batch_size,
+            "refresh_batch_interval_minutes": config.retry.refresh_batch_interval_minutes,
+            "refresh_cooldown_hours": config.retry.refresh_cooldown_hours,
         },
         "quota_limits": {
             "enabled": config.quota_limits.enabled,
@@ -2380,6 +2384,125 @@ async def generate_images(
 
     except Exception as e:
         logger.error(f"[IMAGE-GEN] [req_{request_id}] 图片生成失败: {type(e).__name__}: {str(e)}")
+        raise
+
+# ---------- 图片编辑 API (OpenAI 兼容 - 图生图) ----------
+@app.post("/v1/images/edits")
+async def edit_images(
+    request: Request,
+    image: UploadFile = File(..., description="要编辑的原始图片"),
+    prompt: str = Form(..., description="编辑描述"),
+    model: str = Form("gemini-imagen"),
+    n: int = Form(1),
+    size: str = Form("1024x1024"),
+    response_format: Optional[str] = Form(None),
+    mask: Optional[UploadFile] = File(None, description="遮罩图片（可选）"),
+    authorization: Optional[str] = Header(None),
+):
+    """OpenAI 兼容的图片编辑接口（图生图）
+
+    接收上传的图片和编辑描述，将其转换为多模态 ChatRequest，
+    调用 chat_impl 处理，然后将响应转换回 OpenAI 图片格式。
+    """
+    # API Key 验证
+    verify_api_key(API_KEY, authorization)
+
+    # 生成请求ID
+    request_id = str(uuid.uuid4())[:6]
+
+    try:
+        # 读取上传的图片
+        image_bytes = await image.read()
+        image_b64 = base64.b64encode(image_bytes).decode()
+        mime_type = image.content_type or "image/png"
+        data_uri = f"data:{mime_type};base64,{image_b64}"
+
+        logger.info(
+            f"[IMAGE-EDIT] [req_{request_id}] 收到图片编辑请求: "
+            f"model={model}, image_size={len(image_bytes)} bytes, "
+            f"mime={mime_type}, prompt={prompt[:100]}"
+        )
+
+        # 构造多模态消息内容（图片 + 文本）
+        content_parts = [
+            {"type": "image_url", "image_url": {"url": data_uri}},
+            {"type": "text", "text": prompt},
+        ]
+
+        # 如果有 mask，也加入消息
+        if mask:
+            mask_bytes = await mask.read()
+            mask_b64 = base64.b64encode(mask_bytes).decode()
+            mask_mime = mask.content_type or "image/png"
+            mask_uri = f"data:{mask_mime};base64,{mask_b64}"
+            content_parts.insert(1, {"type": "image_url", "image_url": {"url": mask_uri}})
+            logger.info(f"[IMAGE-EDIT] [req_{request_id}] 包含遮罩图片: {len(mask_bytes)} bytes")
+
+        # 构造 ChatRequest
+        chat_req = ChatRequest(
+            model=model,
+            messages=[
+                Message(role="user", content=content_parts)
+            ],
+            stream=False  # 图片编辑不支持流式
+        )
+
+        # 调用 chat_impl 获取响应
+        chat_response = await chat_impl(chat_req, request, authorization)
+
+        # 从响应中提取图片（复用 /v1/images/generations 的逻辑）
+        message_content = chat_response["choices"][0]["message"]["content"]
+
+        b64_pattern = r'!\[.*?\]\(data:([^;]+);base64,([^\)]+)\)'
+        b64_matches = re.findall(b64_pattern, message_content)
+        url_pattern = r'!\[.*?\]\((https?://[^\)]+)\)'
+        url_matches = re.findall(url_pattern, message_content)
+
+        # 确定响应格式：使用系统配置
+        system_format = config_manager.image_output_format
+        fmt = "b64_json" if system_format == "base64" else "url"
+
+        logger.info(f"[IMAGE-EDIT] [req_{request_id}] 使用系统配置: {system_format} -> {fmt}")
+
+        # 构建 OpenAI 格式的响应
+        created_time = int(time.time())
+        data_list = []
+
+        if fmt == "b64_json":
+            for mime, b64_data in b64_matches[:n]:
+                data_list.append({"b64_json": b64_data, "revised_prompt": prompt})
+            # 如果没有 base64 但有 URL，下载并转换
+            if not data_list and url_matches:
+                for url in url_matches[:n]:
+                    try:
+                        resp = await http_client.get(url)
+                        if resp.status_code == 200:
+                            b64_data = base64.b64encode(resp.content).decode()
+                            data_list.append({"b64_json": b64_data, "revised_prompt": prompt})
+                    except Exception as e:
+                        logger.error(f"[IMAGE-EDIT] [req_{request_id}] 下载图片失败: {url}, {str(e)}")
+        else:
+            for url in url_matches[:n]:
+                data_list.append({"url": url, "revised_prompt": prompt})
+            # 如果没有 URL 但有 base64，保存并生成 URL
+            if not data_list and b64_matches:
+                base_url = get_base_url(request)
+                chat_id = f"img-edit-{uuid.uuid4()}"
+                for idx, (mime, b64_data) in enumerate(b64_matches[:n], 1):
+                    try:
+                        img_data = base64.b64decode(b64_data)
+                        file_id = f"edit-{uuid.uuid4()}"
+                        url = save_image_to_hf(img_data, chat_id, file_id, mime, base_url, IMAGE_DIR)
+                        data_list.append({"url": url, "revised_prompt": prompt})
+                    except Exception as e:
+                        logger.error(f"[IMAGE-EDIT] [req_{request_id}] 保存图片失败: {str(e)}")
+
+        logger.info(f"[IMAGE-EDIT] [req_{request_id}] 图片编辑完成: {len(data_list)}张")
+
+        return {"created": created_time, "data": data_list}
+
+    except Exception as e:
+        logger.error(f"[IMAGE-EDIT] [req_{request_id}] 图片编辑失败: {type(e).__name__}: {str(e)}")
         raise
 
 # ---------- 图片生成处理函数 ----------
