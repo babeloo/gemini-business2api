@@ -540,6 +540,12 @@
               min="1"
               class="w-full rounded-2xl border border-input bg-background px-3 py-2 text-sm"
             />
+            <p class="text-xs text-muted-foreground">
+              注册前请确认邮箱已配置，<a href="https://github.com/Dreamy-rain/gemini-business2api?tab=readme-ov-file#-%E9%82%AE%E7%AE%B1%E6%8F%90%E4%BE%9B%E5%95%86%E9%85%8D%E7%BD%AE" target="_blank" class="text-primary hover:underline font-medium">查看邮箱配置文档</a>
+            </p>
+            <p class="text-xs text-muted-foreground">
+              遇到注册失败、收不到验证码或刷新异常？<a href="https://github.com/Dreamy-rain/gemini-business2api/issues/46" target="_blank" class="text-primary hover:underline font-medium">查看常见问题与解决方案</a>
+            </p>
           </div>
 
           <div v-else class="space-y-4">
@@ -558,7 +564,7 @@
             <textarea
               v-model="importText"
               class="min-h-[140px] w-full rounded-2xl border border-input bg-background px-3 py-2 text-xs font-mono"
-              placeholder="duckmail----you@example.com----password&#10;moemail----you@moemail.app----emailId&#10;freemail----you@freemail.local&#10;gptmail----you@example.com&#10;user@outlook.com----loginPassword----clientId----refreshToken"
+              placeholder="duckmail----you@example.com----password&#10;moemail----you@moemail.app----emailId&#10;freemail----you@freemail.local&#10;gptmail----you@example.com&#10;cfmail----you@example.com----jwtToken&#10;user@outlook.com----loginPassword----clientId----refreshToken"
             ></textarea>
             <div class="rounded-2xl border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
               <p>支持三种格式：</p>
@@ -566,6 +572,7 @@
               <p class="mt-1 font-mono">moemail----email----emailId</p>
               <p class="mt-1 font-mono">freemail----email</p>
               <p class="mt-1 font-mono">gptmail----email</p>
+              <p class="mt-1 font-mono">cfmail----email----jwtToken</p>
               <p class="mt-1 font-mono">email----password----clientId----refreshToken</p>
               <p class="mt-2">导入后请执行一次"刷新选中"以获取 Cookie。</p>
               <p class="mt-1">注册失败建议关闭无头浏览器再试</p>
@@ -1169,6 +1176,14 @@
             <p class="text-xs text-muted-foreground">
               选中导出仅包含当前已勾选账号（{{ selectedCount }} 个）。
             </p>
+            <p class="text-xs text-muted-foreground">
+              <template v-if="exportFormat === 'json'">
+                JSON 格式包含完整数据（Cookie、Token、过期时间等），导入后无需重新刷新。
+              </template>
+              <template v-else>
+                TXT 格式仅导出邮箱和密码，导入后需要重新刷新获取 Cookie。
+              </template>
+            </p>
           </div>
         </div>
         <div class="border-t border-border/60 px-6 py-4">
@@ -1228,7 +1243,8 @@ const toast = useToast()
 const searchQuery = ref('')
 const statusFilter = ref('all')
 const selectedIds = ref<Set<string>>(new Set())
-const viewMode = ref<'table' | 'card'>('table')
+const viewMode = ref<'table' | 'card'>((localStorage.getItem('accounts_view_mode') as 'table' | 'card') || 'table')
+watch(viewMode, (val) => localStorage.setItem('accounts_view_mode', val))
 const currentPage = ref(1)
 const pageSize = ref(50)
 const isEditOpen = ref(false)
@@ -1315,6 +1331,7 @@ const statusOptions = [
   { label: '即将过期', value: '即将过期' },
   { label: '已过期', value: '已过期' },
   { label: '手动禁用', value: '手动禁用' },
+  { label: '403 禁用', value: '403 禁用' },
   { label: '429限流', value: '429限流' },
 ]
 
@@ -1787,6 +1804,26 @@ const parseImportLines = (raw: string) => {
       return
     }
 
+    if (parts[0].toLowerCase() === 'cfmail') {
+      if (parts.length < 2 || !parts[1]) {
+        errors.push(`第 ${lineNo} 行格式错误（cfmail）`)
+        return
+      }
+      const email = parts[1]
+      const jwt = parts[2] || ''
+      items.push({
+        id: email,
+        secure_c_ses: '',
+        csesidx: '',
+        config_id: '',
+        expires_at: IMPORT_EXPIRES_AT,
+        mail_provider: 'cfmail',
+        mail_address: email,
+        mail_password: jwt,
+      })
+      return
+    }
+
     if (parts.length >= 4 && parts[0] && parts[2] && parts[3]) {
       const email = parts[0]
       const password = parts[1] || ''
@@ -1852,7 +1889,23 @@ const handleImportFile = async (event: Event) => {
       await accountsStore.updateConfig(next)
       selectedIds.value = new Set(importedIds)
       toast.success(`导入 ${importList.length} 条账号配置`)
-      closeRegisterModal()
+
+      // Check if imported accounts need refresh (no valid cookies)
+      const needRefresh = importList.some((item: any) => !item.secure_c_ses)
+      if (needRefresh && importedIds.length > 0) {
+        closeRegisterModal()
+        const confirmed = await confirmDialog.ask({
+          title: '导入成功',
+          message: `已导入 ${importedIds.length} 个账户。检测到部分账户缺少 Cookie，是否立即刷新？`,
+          confirmText: '立即刷新',
+          cancelText: '稍后手动刷新',
+        })
+        if (confirmed) {
+          await handleRefreshSelected()
+        }
+      } else {
+        closeRegisterModal()
+      }
       return
     }
 
@@ -1973,6 +2026,9 @@ const exportConfig = async (format: 'json' | 'txt', scope: 'all' | 'selected' = 
       }
       if (provider === 'gptmail') {
         return `gptmail----${email}`
+      }
+      if (provider === 'cfmail') {
+        return `cfmail----${email}----${item.mail_password || ''}`
       }
       if (provider === 'duckmail') {
         return `duckmail----${email}----${item.mail_password || ''}`
@@ -2317,6 +2373,9 @@ const statusLabel = (account: AdminAccount) => {
     return '429限流'
   }
   if (account.disabled) {
+    if (account.disabled_reason?.includes('403')) {
+      return '403 禁用'
+    }
     return '手动禁用'
   }
   if (account.status === '已过期') {
@@ -2341,6 +2400,9 @@ const statusClass = (account: AdminAccount) => {
   }
   if (status === '手动禁用') {
     return 'bg-muted text-muted-foreground'
+  }
+  if (status === '403 禁用') {
+    return 'bg-rose-600 text-white'
   }
   return 'bg-emerald-500 text-white'
 }
@@ -2374,7 +2436,7 @@ const trialBadgeClass = (days: number | null | undefined) => {
 
 const rowClass = (account: AdminAccount) => {
   const status = statusLabel(account)
-  if (status === '手动禁用' || status === '已过期') {
+  if (status === '手动禁用' || status === '已过期' || status === '403 禁用') {
     return 'bg-muted/70'
   }
   return ''

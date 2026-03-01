@@ -165,6 +165,25 @@ class LoginService(BaseTaskService[LoginTask]):
                 self._append_log(task, "error", f"❌ 失败原因: {error}")
                 self._append_log(task, "error", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+                # 403 自动禁用账户
+                if "403" in error:
+                    try:
+                        accounts = load_accounts_from_source()
+                        for acc in accounts:
+                            if acc.get("id") == account_id:
+                                acc["disabled"] = True
+                                acc["disabled_reason"] = "403 Access Restricted"
+                                break
+                        self._apply_accounts_update(accounts)
+                        # 同步到内存中的 account manager
+                        if account_id in self.multi_account_mgr.accounts:
+                            mgr = self.multi_account_mgr.accounts[account_id]
+                            mgr.config.disabled = True
+                            mgr.disabled_reason = "403 Access Restricted"
+                        self._append_log(task, "error", f"⛔ 已自动禁用账户: {account_id}")
+                    except Exception as e:
+                        self._append_log(task, "warning", f"⚠️ 自动禁用失败: {e}")
+
             # 账号之间等待 10 秒，避免资源争抢和风控
             if idx < len(task.account_ids) and not task.cancel_requested:
                 self._append_log(task, "info", "⏳ 等待 10 秒后处理下一个账号...")
@@ -222,8 +241,8 @@ class LoginService(BaseTaskService[LoginTask]):
                 log_callback=log_cb,
             )
             client.set_credentials(mail_address)
-        elif mail_provider in ("duckmail", "moemail", "freemail", "gptmail"):
-            if mail_provider not in ("freemail", "gptmail") and not mail_password:
+        elif mail_provider in ("duckmail", "moemail", "freemail", "gptmail", "cfmail"):
+            if mail_provider not in ("freemail", "gptmail", "cfmail") and not mail_password:
                 error_message = "邮箱密码缺失" if mail_provider == "duckmail" else "mail password (email_id) missing"
                 return {"success": False, "email": account_id, "error": error_message}
             if mail_provider == "freemail" and not account.get("mail_jwt_token") and not config.basic.freemail_jwt_token:
@@ -292,6 +311,8 @@ class LoginService(BaseTaskService[LoginTask]):
         config_data["mail_provider"] = mail_provider
         if mail_provider in ("freemail", "gptmail"):
             config_data["mail_password"] = ""
+        elif mail_provider == "cfmail":
+            config_data["mail_password"] = mail_password  # 保留 JWT token
         else:
             config_data["mail_password"] = mail_password
         if mail_provider == "microsoft":
@@ -353,6 +374,10 @@ class LoginService(BaseTaskService[LoginTask]):
             elif mail_provider == "gptmail":
                 # GPTMail 不需要密码，允许直接刷新
                 pass
+            elif mail_provider == "cfmail":
+                # cfmail 需要 JWT token（存在 mail_password 中）或全局配置
+                if not mail_password and not config.basic.cfmail_api_key:
+                    continue
             else:
                 continue
             expires_at = account.get("expires_at")

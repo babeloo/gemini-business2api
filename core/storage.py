@@ -239,9 +239,8 @@ async def _pg_acquire():
             asyncpg.InterfaceError,
             OSError) as e:
         logger.warning(f"[STORAGE] Connection lost, resetting pool: {e}")
-        pool = await _reset_pool()
-        async with pool.acquire() as conn:
-            yield conn
+        await _reset_pool()
+        raise
 
 
 async def _init_tables(pool) -> None:
@@ -644,16 +643,40 @@ async def bulk_update_accounts_cooldown(updates: list[tuple[str, dict]]) -> tupl
 
     backend = _get_backend()
     existing: dict[str, dict] = {}
+    updated = 0
+
     if backend == "postgres":
         async with _pg_acquire() as conn:
+            # SELECT + UPDATE in one connection to avoid contention
             rows = await conn.fetch(
                 "SELECT account_id, data FROM accounts WHERE account_id = ANY($1)",
                 account_ids,
             )
-        for row in rows:
-            data = _parse_account_value(row["data"])
-            if data is not None:
-                existing[row["account_id"]] = data
+            for row in rows:
+                data = _parse_account_value(row["data"])
+                if data is not None:
+                    existing[row["account_id"]] = data
+
+            missing = [aid for aid in account_ids if aid not in existing]
+            if existing:
+                async with conn.transaction():
+                    for account_id, data in existing.items():
+                        cooldown_data = cooldown_map[account_id]
+                        _apply_cooldown_data(data, cooldown_data)
+                        payload = json.dumps(data, ensure_ascii=False)
+                        result = await conn.execute(
+                            """
+                            UPDATE accounts
+                            SET data = $2, updated_at = CURRENT_TIMESTAMP
+                            WHERE account_id = $1
+                            """,
+                            account_id,
+                            payload,
+                        )
+                        if result.startswith("UPDATE") and not result.endswith("0"):
+                            updated += 1
+        return updated, missing if existing else account_ids
+
     elif backend == "sqlite":
         conn = _get_sqlite_conn()
         placeholders = ",".join(["?"] * len(account_ids))
@@ -666,35 +689,11 @@ async def bulk_update_accounts_cooldown(updates: list[tuple[str, dict]]) -> tupl
             data = _parse_account_value(row["data"])
             if data is not None:
                 existing[row["account_id"]] = data
-    else:
-        return 0, account_ids
 
-    missing = [account_id for account_id in account_ids if account_id not in existing]
-    if not existing:
-        return 0, missing
+        missing = [aid for aid in account_ids if aid not in existing]
+        if not existing:
+            return 0, missing
 
-    updated = 0
-    backend = _get_backend()
-    if backend == "postgres":
-        async with _pg_acquire() as conn:
-            async with conn.transaction():
-                for account_id, data in existing.items():
-                    cooldown_data = cooldown_map[account_id]
-                    _apply_cooldown_data(data, cooldown_data)
-                    payload = json.dumps(data, ensure_ascii=False)
-                    result = await conn.execute(
-                        """
-                        UPDATE accounts
-                        SET data = $2, updated_at = CURRENT_TIMESTAMP
-                        WHERE account_id = $1
-                        """,
-                        account_id,
-                        payload,
-                    )
-                    if result.startswith("UPDATE") and not result.endswith("0"):
-                        updated += 1
-    elif backend == "sqlite":
-        conn = _get_sqlite_conn()
         with _sqlite_lock, conn:
             for account_id, data in existing.items():
                 cooldown_data = cooldown_map[account_id]
@@ -710,7 +709,9 @@ async def bulk_update_accounts_cooldown(updates: list[tuple[str, dict]]) -> tupl
                 )
                 if cur.rowcount > 0:
                     updated += 1
-    return updated, missing
+        return updated, missing
+
+    return 0, account_ids
 
 async def bulk_update_accounts_disabled(account_ids: list[str], disabled: bool) -> tuple[int, list[str]]:
     if not account_ids:
