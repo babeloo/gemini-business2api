@@ -756,6 +756,14 @@ async def auto_refresh_accounts_task():
                     global_stats
                 )
 
+                # Fix inconsistent state: accounts that are no longer expired/disabled
+                # and have no quota cooldowns should be marked available
+                for acc_id, acc_mgr in multi_account_mgr.accounts.items():
+                    if not acc_mgr.config.is_expired() and not acc_mgr.config.disabled and not acc_mgr.is_available:
+                        if not acc_mgr.quota_cooldowns:
+                            acc_mgr.is_available = True
+                            logger.info(f"[AUTO-REFRESH] 账号 {acc_id} 状态已修正为可用")
+
                 _last_known_accounts_version = db_version
                 logger.info(f"[AUTO-REFRESH] 账号刷新完成，当前账号数: {len(multi_account_mgr.accounts)}")
 

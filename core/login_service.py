@@ -278,10 +278,6 @@ class LoginService(BaseTaskService[LoginTask]):
 
         headless = config.basic.browser_headless
 
-        # 持久化浏览器配置：每个账号一个独立的 user-data-dir
-        sanitized = account_id.replace("@", "_at_").replace(".", "_")
-        profile_dir = os.path.join("data", "browser_profiles", sanitized)
-
         log_cb("info", f"🌐 启动浏览器 (无头模式={headless})...")
 
         automation = GeminiAutomation(
@@ -289,7 +285,6 @@ class LoginService(BaseTaskService[LoginTask]):
             proxy=proxy_for_auth,
             headless=headless,
             log_callback=log_cb,
-            profile_dir=profile_dir,
         )
         # 允许外部取消时立刻关闭浏览器
         self._add_cancel_hook(task.id, lambda: getattr(automation, "stop", lambda: None)())
