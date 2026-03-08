@@ -77,13 +77,13 @@ cd gemini-business2api
 cp .env.example .env
 # Edit .env to set ADMIN_KEY
 
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Update to latest version
-docker-compose pull && docker-compose up -d
+docker compose pull && docker compose up -d
 ```
 
 ---
@@ -231,7 +231,7 @@ curl http://localhost:7860/v1/chat/completions \
 
 ## 📧 Email Provider Configuration
 
-The project supports 4 temporary email providers for automatic account registration. Switch and configure them in **Admin Panel → System Settings → Temp Email Provider**.
+The project supports 5 temporary email providers for automatic account registration. Switch and configure them in **Admin Panel → System Settings → Temp Email Provider**.
 
 ### Moemail (Default)
 
@@ -262,6 +262,19 @@ Self-hosted temporary email service, for users with their own servers.
 
 - **Project**: [github.com/idinging/freemail](https://github.com/idinging/freemail)
 - **Config**: Self-hosted service URL + JWT Token + Domain (optional)
+
+### Cloudflare Mail (CFMail)
+
+Cloudflare-based temporary email service, suitable for self-hosted or lightweight deployments.
+
+- **Project**: [github.com/dreamhunter2333/cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email)
+- **Admin Panel Path**: System Settings → Temp Email Provider = `cfmail`
+- **Config**:
+  - Cloudflare Mail API URL (`cfmail_base_url`)
+  - Access password (`cfmail_api_key`, can be empty if your instance does not require it)
+  - Email domain (`cfmail_domain`, optional, without `@`)
+- **Import format (optional)**: `cfmail----you@example.com----jwtToken`
+  - The third field is the mailbox JWT token used to fetch verification codes.
 
 > **Tip**: All email settings are configured in the admin panel. Microsoft email login is also handled through the admin panel.
 
@@ -317,10 +330,37 @@ git clone -b refresh-worker https://github.com/Dreamy-rain/gemini-business2api.g
 cd gemini-refresh-worker
 cp .env.example .env
 # Edit .env to set DATABASE_URL
-docker-compose up -d
+docker compose up -d
 ```
 
 This service reads accounts from the database and runs scheduled credential refresh independently. Supports cron scheduling, batch processing, and cooldown deduplication.
+
+---
+
+## 🌿 Branch Guide
+
+To keep deployment logic clear, choose branches by scenario:
+
+- `main`: stable line (recommended for production API + admin panel)
+- `beta`: pre-release line (new features land here first)
+- `refresh-worker`: standalone refresh service branch (ideal for local refresh worker + remote API)
+- `clash-proxy`: Clash proxy branch (for registration/refresh in proxy-constrained networks)
+
+Recommended setup:
+
+- Deploy `main`/`beta` on cloud for API + admin panel
+- Run `refresh-worker` locally for account registration/refresh
+- Use `clash-proxy` when your network path relies on Clash proxy routing
+
+### Clash Proxy Deployment Example
+
+```bash
+git clone -b clash-proxy https://github.com/Dreamy-rain/gemini-business2api.git gemini-business2api-clash
+cd gemini-business2api-clash
+cp .env.example .env
+# Edit .env and proxy settings in the admin panel, then start
+docker compose up -d
+```
 
 ---
 
