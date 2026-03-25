@@ -6,7 +6,7 @@
 <p align="center">
   <a href="../README.md">简体中文</a> | <strong>English</strong>
 </p>
-<p align="center"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
+<p align="center"><img src="https://img.shields.io/badge/License-CNC--1.0-red.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
 
 <p align="center">Convert Gemini Business to OpenAI-compatible API with multi-account load balancing, image generation, video generation, multimodal capabilities, and built-in admin panel.</p>
 
@@ -14,7 +14,7 @@
 
 ## 📜 License & Disclaimer
 
-**License**: MIT License - See [LICENSE](../LICENSE) for details
+**License**: Cooperative Non-Commercial License (CNC-1.0) - See [LICENSE](../LICENSE) for details
 
 ### ⚠️ Prohibited Use & Anti-Abuse Policy
 
@@ -152,7 +152,8 @@ python main.py
 
 ## 🗄️ Database Persistence
 
-Set `DATABASE_URL` to persist accounts, settings, and stats. Without it, SQLite (`data.db`) is used automatically.
+By default, do not set `DATABASE_URL`. Use local SQLite (`data.db`) directly (recommended).
+Use an online database only when necessary (for example: multi-instance shared data, or cloud platforms without persistent volume mounts).
 
 **Configuration:**
 - Local deployment → add to `.env`
@@ -162,7 +163,18 @@ Set `DATABASE_URL` to persist accounts, settings, and stats. Without it, SQLite 
 DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 ```
 
-**Free PostgreSQL Providers:**
+### Local Refresh Service Recommendation (`refresh-worker`)
+
+- Recommended topology: deploy `main` on cloud, run `refresh-worker` locally for browser-based refresh jobs.
+- Prefer local SQLite (`data.db`) as refresh-side cache for better stability under network jitter.
+- If your local refresh worker needs to connect to the remote admin panel directly, use remote interface + `ADMIN_KEY`:
+
+```env
+REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
+REMOTE_PROJECT_PASSWORD=your_admin_key
+```
+
+**Online PostgreSQL (Optional):**
 
 | Service | Free Tier | How to Get |
 |---------|-----------|-----------|
@@ -231,7 +243,7 @@ curl http://localhost:7860/v1/chat/completions \
 
 ## 📧 Email Provider Configuration
 
-The project supports 5 temporary email providers for automatic account registration. Switch and configure them in **Admin Panel → System Settings → Temp Email Provider**.
+The project supports 6 temporary email providers for automatic account registration. Switch and configure them in **Admin Panel → System Settings → Temp Email Provider**.
 
 ### Moemail (Default)
 
@@ -276,6 +288,17 @@ Cloudflare-based temporary email service, suitable for self-hosted or lightweigh
 - **Import format (optional)**: `cfmail----you@example.com----jwtToken`
   - The third field is the mailbox JWT token used to fetch verification codes.
 
+### Sample Mail
+
+Lightweight self-hosted temporary email based on Cloudflare Workers + D1. No API Key required; the email domain is determined by the Worker environment variable.
+
+- **Project**: [github.com/bestK/sample-mail](https://github.com/bestK/sample-mail)
+- **Admin Panel Path**: System Settings → Temp Email Provider = `samplemail`
+- **Configuration**:
+  - Sample Mail Worker URL (`samplemail_base_url`, required)
+  - SSL verification (`samplemail_verify_ssl`, enabled by default)
+- **Note**: Domain selection and API Key are not supported. The email domain is set via the `EMAIL_DOMAIN` environment variable in your Worker.
+
 > **Tip**: All email settings are configured in the admin panel. Microsoft email login is also handled through the admin panel.
 
 ---
@@ -294,7 +317,7 @@ In addition to local Docker Compose, these platforms support Docker image deploy
 
 > Docker image: `cooooookk/gemini-business2api:latest`
 >
-> Set `ADMIN_KEY` and `DATABASE_URL` environment variables when deploying.
+> Set `ADMIN_KEY` first. Configure `DATABASE_URL` only when needed (local `data.db` is the default recommendation).
 
 ### Zeabur Deployment Guide
 
@@ -305,7 +328,7 @@ In addition to local Docker Compose, these platforms support Docker image deploy
    | Variable | Required | Description |
    |----------|----------|-------------|
    | `ADMIN_KEY` | ✅ | Admin panel login key |
-   | `DATABASE_URL` | Optional | PostgreSQL connection string (recommended to avoid data loss on restart) |
+   | `DATABASE_URL` | Optional | PostgreSQL connection string (configure only when online DB is required) |
 
 4. **Persistent Storage** (Important):
 
@@ -329,7 +352,7 @@ To deploy the account refresh service separately from the main API, use the [`re
 git clone -b refresh-worker https://github.com/Dreamy-rain/gemini-business2api.git gemini-refresh-worker
 cd gemini-refresh-worker
 cp .env.example .env
-# Edit .env to set DATABASE_URL
+# Edit .env (default local data.db; set DATABASE_URL only when needed)
 docker compose up -d
 ```
 

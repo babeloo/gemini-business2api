@@ -40,6 +40,7 @@ RUN apt-get update && \
 
 # 复制后端代码
 COPY main.py .
+COPY VERSION .
 COPY core ./core
 COPY util ./util
 COPY scripts ./scripts

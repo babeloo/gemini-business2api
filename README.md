@@ -2,20 +2,19 @@
   <img src="docs/logo.svg" width="120" alt="Gemini Business2API logo" />
 </p>
 <h1 align="center">Gemini Business2API</h1>
-<p align="center">赋予硅基生物以灵魂</p>
-<p align="center">当时明月在 · 曾照彩云归</p>
+<p align="center">Gemini Business → OpenAI 兼容 API</p>
 <p align="center">
   <strong>简体中文</strong> | <a href="docs/README_EN.md">English</a>
 </p>
-<p align="center"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
+<p align="center"><img src="https://img.shields.io/badge/License-CNC--1.0-red.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
 
-<p align="center">将 Gemini Business 转换为 OpenAI 兼容接口，支持多账号负载均衡、图像生成、视频生成、多模态能力与内置管理面板。</p>
+<p align="center">支持多账号轮询、注册机、多模态、图像生成与内置管理面板。</p>
 
 ---
 
 ## 📜 开源协议与声明
 
-**开源协议**: MIT License - 查看 [LICENSE](LICENSE) 文件了解详情
+**开源协议**: Cooperative Non-Commercial License (CNC-1.0) - 查看 [LICENSE](LICENSE) 文件了解详情
 
 ### ⚠️ 严禁滥用：禁止将本工具用于商业用途或任何形式的滥用（无论规模大小）
 
@@ -31,6 +30,16 @@
 **合法用途**：本项目仅限个人学习、技术研究与非商业性技术交流。
 
 📖 **完整声明与免责条款**：[DISCLAIMER.md](docs/DISCLAIMER.md)
+
+---
+
+## 💬 社区交流
+
+点击链接加入群聊【business2api交流群】：[https://qm.qq.com/q/yegwCqJisS](https://qm.qq.com/q/yegwCqJisS)
+
+## 🗺️ 路线图预告
+
+- 预告：`gemini-web` 逆向方向的技术研究分享、、
 
 ---
 
@@ -153,7 +162,8 @@ python main.py
 
 ## 🗄️ 数据库持久化
 
-设置 `DATABASE_URL` 可将账户、设置、统计写入数据库，避免容器重启丢数据。未设置时自动使用 SQLite（本地 `data.db`）。
+默认不配置 `DATABASE_URL`，直接使用 SQLite（本地 `data.db`，推荐）。
+仅在必要场景（如多实例共享同一份数据、云平台无法挂载持久化目录）再使用在线数据库。
 
 **配置方式：**
 - 本地部署 → 写入 `.env`
@@ -165,7 +175,7 @@ DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 
 ### 本地刷新服务建议（refresh-worker）
 
-- 推荐拓扑：`beta` 部署在云端，`refresh-worker` 在本地机器执行浏览器刷新。
+- 推荐拓扑：`main` 部署在云端，`refresh-worker` 在本地机器执行浏览器刷新。
 - 推荐本地优先使用 SQLite（`data.db`）做刷新侧缓存，网络不稳定时更稳。
 - 如需由本地刷新器直接连远端面板，可使用远端接口 + `ADMIN_KEY`：
 
@@ -174,14 +184,12 @@ REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
 REMOTE_PROJECT_PASSWORD=your_admin_key
 ```
 
-- 登录入口建议使用 `https://auth.business.gemini.google/login`（`/` 通常会跳转，但直接用 `/login` 更稳定）。
+**如需在线 PostgreSQL（可选）：**
 
-**免费 PostgreSQL 推荐：**
-
-| 服务 | 免费额度 | 获取方式 |
-|------|---------|---------|
+| 服务                      | 免费额度                 | 获取方式                                       |
+| ------------------------- | ------------------------ | ---------------------------------------------- |
 | [Neon](https://neon.tech) | 512MB 存储 / 100 CPUH 月 | 注册 → Create Project → 复制 Connection string |
-| [Aiven](https://aiven.io) | 额度更充裕 | 注册 → 创建 PostgreSQL 服务 → 复制连接串 |
+| [Aiven](https://aiven.io) | 额度更充裕               | 注册 → 创建 PostgreSQL 服务 → 复制连接串       |
 
 > `postgres://` 和 `postgresql://` 两种格式均可直接使用，无需手动转换。
 
@@ -219,13 +227,13 @@ python scripts/migrate_to_database.py
 
 完全兼容 OpenAI API 格式，可直接对接 ChatGPT-Next-Web、LobeChat、OpenCat 等客户端。
 
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `/v1/chat/completions` | POST | 对话补全（支持流式） |
-| `/v1/models` | GET | 获取可用模型列表 |
-| `/v1/images/generations` | POST | 图片生成（文生图） |
-| `/v1/images/edits` | POST | 图片编辑（图生图） |
-| `/health` | GET | 健康检查 |
+| 接口                     | 方法 | 说明                 |
+| ------------------------ | ---- | -------------------- |
+| `/v1/chat/completions`   | POST | 对话补全（支持流式） |
+| `/v1/models`             | GET  | 获取可用模型列表     |
+| `/v1/images/generations` | POST | 图片生成（文生图）   |
+| `/v1/images/edits`       | POST | 图片编辑（图生图）   |
+| `/health`                | GET  | 健康检查             |
 
 **调用示例：**
 
@@ -246,7 +254,7 @@ curl http://localhost:7860/v1/chat/completions \
 
 ## 📧 邮箱提供商配置
 
-项目支持 5 种临时邮箱，用于自动注册账号。在 **管理面板 → 系统设置 → 临时邮箱提供商** 中切换。
+项目支持 6 种临时邮箱，用于自动注册账号。在 **管理面板 → 系统设置 → 临时邮箱提供商** 中切换。
 
 ### Moemail（默认推荐）
 
@@ -291,6 +299,17 @@ curl http://localhost:7860/v1/chat/completions \
 - **导入格式（可选）**：`cfmail----you@example.com----jwtToken`
   - 第三个字段是该邮箱的 JWT Token（用于拉取邮件验证码）
 
+### Sample Mail
+
+基于 Cloudflare Workers + D1 的轻量自建临时邮箱，无需 API Key，域名由 Worker 环境变量决定。
+
+- **项目地址**：[github.com/bestK/sample-mail](https://github.com/bestK/sample-mail)
+- **管理面板配置路径**：系统设置 → 临时邮箱提供商选择 `samplemail`
+- **配置项**：
+  - Sample Mail Worker 地址（`samplemail_base_url`，必填）
+  - SSL 校验（`samplemail_verify_ssl`，默认开启）
+- **说明**：不支持指定域名或 API Key，邮箱域名由 Worker 的 `EMAIL_DOMAIN` 环境变量决定。
+
 > **提示**：所有邮箱配置均在管理面板中完成，无需手动编辑配置文件。Microsoft 邮箱登录也在管理面板中操作。
 
 ---
@@ -299,17 +318,17 @@ curl http://localhost:7860/v1/chat/completions \
 
 除本地 Docker Compose 外，以下平台均支持 Docker 镜像部署：
 
-| 平台 | 免费额度 | 特点 |
-|------|---------|------|
-| [Render](https://render.com) | ✅ 有 | 支持 Docker、自动 SSL、免费 PostgreSQL |
-| [Railway](https://railway.app) | $5/月额度 | 一键 Docker 部署、自带数据库 |
-| [Fly.io](https://fly.io) | ✅ 有 | 全球边缘部署、支持持久化卷 |
-| [Claw Cloud](https://claw.cloud) | ✅ 有 | 容器云平台，简单易用 |
-| 自建 VPS（推荐） | — | 完全可控，配合 Docker Compose |
+| 平台                             | 免费额度  | 特点                                   |
+| -------------------------------- | --------- | -------------------------------------- |
+| [Render](https://render.com)     | ✅ 有      | 支持 Docker、自动 SSL、免费 PostgreSQL |
+| [Railway](https://railway.app)   | $5/月额度 | 一键 Docker 部署、自带数据库           |
+| [Fly.io](https://fly.io)         | ✅ 有      | 全球边缘部署、支持持久化卷             |
+| [Claw Cloud](https://claw.cloud) | ✅ 有      | 容器云平台，简单易用                   |
+| 自建 VPS（推荐）                 | —         | 完全可控，配合 Docker Compose          |
 
 > Docker 镜像：`cooooookk/gemini-business2api:latest`
 >
-> 部署时设置环境变量 `ADMIN_KEY` 和 `DATABASE_URL` 即可。
+> 部署时先设置 `ADMIN_KEY`；`DATABASE_URL` 仅在必要时再配置（默认本地 `data.db` 更推荐）。
 
 ### Zeabur 部署教程
 
@@ -317,18 +336,18 @@ curl http://localhost:7860/v1/chat/completions \
 2. 登录 [Zeabur](https://zeabur.com) → **创建项目** → **共享集群** → **部署新服务** → **连接 GitHub** → 选择 Fork 的仓库
 3. 添加环境变量：
 
-   | 变量名 | 必填 | 说明 |
-   |--------|------|------|
-   | `ADMIN_KEY` | ✅ | 管理面板登录密钥 |
-   | `DATABASE_URL` | 可选 | PostgreSQL 连接串（推荐配置，避免重启丢数据） |
+   | 变量名         | 必填 | 说明                                          |
+   | -------------- | ---- | --------------------------------------------- |
+   | `ADMIN_KEY`    | ✅    | 管理面板登录密钥                              |
+   | `DATABASE_URL` | 可选 | PostgreSQL 连接串（仅在需要在线数据库时配置） |
 
 4. **持久化挂载目录**（重要）：
 
    在服务设置中添加持久化存储：
 
-   | 硬盘 ID | 挂载目录 |
-   |---------|---------|
-   | `data` | `/app/data` |
+   | 硬盘 ID | 挂载目录    |
+   | ------- | ----------- |
+   | `data`  | `/app/data` |
 
 5. 点击 **重新部署** 使配置生效
 
@@ -344,7 +363,7 @@ curl http://localhost:7860/v1/chat/completions \
 git clone -b refresh-worker https://github.com/Dreamy-rain/gemini-business2api.git gemini-refresh-worker
 cd gemini-refresh-worker
 cp .env.example .env
-# 编辑 .env 设置 DATABASE_URL
+# 编辑 .env（默认本地 data.db；仅在必要时设置 DATABASE_URL）
 docker compose up -d
 ```
 
@@ -420,14 +439,6 @@ docker compose up -d
     <td><img src="docs/img/img_4.png" alt="图片效果 4" /></td>
   </tr>
 </table>
-
-### QQ交流群
-
-扫码加入 QQ 交流群：
-
-<p>
-  <img src="docs/img/qq.png" alt="QQ交流群二维码" width="360" />
-</p>
 
 ### 更多文档
 

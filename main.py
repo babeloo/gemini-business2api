@@ -67,6 +67,7 @@ from core.account import (
     bulk_delete_accounts as _bulk_delete_accounts
 )
 from core.proxy_utils import parse_proxy_setting
+from core.version import get_update_status, get_version_info
 
 # 导入 Uptime 追踪器
 from core import uptime as uptime_tracker
@@ -672,6 +673,10 @@ async def serve_logo():
 async def health_check():
     """健康检查端点，用于 Docker HEALTHCHECK"""
     return {"status": "ok"}
+
+@app.get("/public/version")
+async def public_version():
+    return get_version_info()
 
 # ---------- Session 中间件配置 ----------
 from starlette.middleware.sessions import SessionMiddleware
@@ -1338,6 +1343,12 @@ async def admin_logout(request: Request):
 
 
 
+@app.get("/admin/version-check")
+@require_login()
+async def admin_version_check(request: Request):
+    return get_update_status()
+
+
 @app.get("/admin/stats")
 @require_login()
 async def admin_stats(request: Request, time_range: str = "24h"):
@@ -1688,6 +1699,8 @@ async def admin_get_settings(request: Request):
             "cfmail_api_key": config.basic.cfmail_api_key,
             "cfmail_verify_ssl": config.basic.cfmail_verify_ssl,
             "cfmail_domain": config.basic.cfmail_domain,
+            "samplemail_base_url": config.basic.samplemail_base_url,
+            "samplemail_verify_ssl": config.basic.samplemail_verify_ssl,
             "browser_engine": config.basic.browser_engine,
             "browser_mode": config.basic.browser_mode,
             "browser_headless": config.basic.browser_headless,
@@ -1764,6 +1777,8 @@ async def admin_update_settings(request: Request, new_settings: dict = Body(...)
         basic.setdefault("cfmail_api_key", config.basic.cfmail_api_key)
         basic.setdefault("cfmail_verify_ssl", config.basic.cfmail_verify_ssl)
         basic.setdefault("cfmail_domain", config.basic.cfmail_domain)
+        basic.setdefault("samplemail_base_url", config.basic.samplemail_base_url)
+        basic.setdefault("samplemail_verify_ssl", config.basic.samplemail_verify_ssl)
         basic.setdefault("browser_engine", config.basic.browser_engine)
         basic.setdefault("browser_mode", config.basic.browser_mode)
         basic.setdefault("browser_headless", config.basic.browser_headless)
@@ -2843,12 +2858,13 @@ async def stream_chat_generator(session: str, text_content: str, file_ids: List[
     json_objects = []  # 收集所有响应对象用于图片解析
     file_ids_info = None  # 保存图片信息
 
-    async with http_client.stream(
+    # 流式对话走专用客户端，避免与普通请求抢连接池
+    async with http_client_chat.stream(
         "POST",
         "https://biz-discoveryengine.googleapis.com/v1alpha/locations/global/widgetStreamAssist",
         headers=headers,
         json=body,
-        timeout=300.0,
+        timeout=httpx.Timeout(300.0, connect=20.0, read=300.0, write=60.0, pool=60.0),
     ) as r:
         if r.status_code != 200:
             error_text = await r.aread()
