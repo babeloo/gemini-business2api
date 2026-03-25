@@ -12,17 +12,49 @@ jobs:
   sync_latest_from_upstream:
     name: Sync latest commits from upstream repo
     runs-on: ubuntu-latest
+    # 仅在 fork 后的仓库中运行，不在原仓库运行
     if: github.repository != 'Dreamy-rain/gemini-business2api'
 
     steps:
       - name: Checkout target repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 必须设置为 0 以获取所有历史记录进行同步
+          fetch-depth: 0 # 获取完整历史记录
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Sync upstream changes
+        run: |
+          # 1. 获取上游仓库地址 (通过 gh cli 获取父仓库地址，更加通用)
+          UPSTREAM_URL=$(gh repo view ${{ github.repository }} --json parent -q ".parent.url")
+          echo "Upstream URL: $UPSTREAM_URL"
+
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch upstream main
+
+          # 2. 尝试合并。使用 --no-commit 允许我们在提交前进行人工干预
+          # 如果有严重冲突导致 merge 失败，脚本会继续执行后续的 checkout
+          git merge upstream/main --no-commit --no-ff || echo "Merge conflicts detected, proceeding with workflow protection."
+
+          # 3. 【关键步骤】强制将 .github/workflows 目录恢复为当前分支（HEAD）的状态
+          # 这会撤销上游对 workflow 的所有改动，并解决该目录下的所有冲突
+          git checkout HEAD -- .github/workflows
+
+          # 重新暂存该目录，确保它保持原样
+          git add .github/workflows
+
+          # 4. 完成同步
+          # 检查是否有内容需要提交 (防止在没有更新时报错)
+          if git diff-index --quiet HEAD; then
+            echo "No changes to sync."
+          else
+            # 如果处于合并状态，完成合并；否则（空更新）不操作
+            git commit -m "chore: sync upstream and protect workflows"
+            git push origin main
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # 使用 GitHub CLI 同步上游
-          gh repo sync ${{ github.repository }} -b main
