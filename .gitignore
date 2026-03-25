@@ -47,3 +47,9 @@ static/
 .DS_Store
 Thumbs.db
 old_version.py
+
+# AI
+.claude/
+
+# Lockfiles
+pnpm-lock.yaml
